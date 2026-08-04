@@ -216,3 +216,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Data mentah pegawai (belum dianonimkan, tidak untuk publik)
+03_dataset/attendance_mentah/
