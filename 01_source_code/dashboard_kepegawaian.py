@@ -22,6 +22,29 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.units import cm      # Untuk konversi ukuran ke cm saat membuat PDF
 from pathlib import Path                # Digunakan untuk membuat dan mengelola path (lokasi file/folder) project
 
+# =====================================================================
+# FUNGSI BANTU: Simpan CSV secara atomic
+# ---------------------------------------------------------------------
+# PERBAIKAN: sebelumnya df.to_csv(path, ...) menulis LANGSUNG ke file
+# database (pegawai_kelola.csv / arsip_pegawai.csv), dan proses ini
+# terjadi setiap kali aplikasi dijalankan ulang (rerun) - termasuk
+# setiap ada pengguna lain yang membuka halaman. Kalau dua proses
+# menulis file yang sama nyaris bersamaan, salah satu tulisan bisa
+# terpotong/tertimpa separuh, yang bisa menjelaskan data yang berubah
+# sendiri tanpa ada perubahan yang disengaja.
+# Solusinya: tulis dulu ke file sementara (path.tmp), baru kemudian
+# os.replace() ke nama file asli. os.replace() bersifat atomic, jadi
+# proses lain yang sedang membaca file asli tidak akan pernah melihat
+# file dalam kondisi setengah tertulis.
+# =====================================================================
+def simpan_csv_atomic(df, path, **to_csv_kwargs):
+    """Menulis DataFrame ke CSV secara atomic (aman dari tulisan bertabrakan)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    df.to_csv(tmp_path, **to_csv_kwargs)
+    os.replace(tmp_path, path)
+
 # ==========================================
 # PATH CONFIGURATION
 # ==========================================
@@ -41,7 +64,8 @@ PEGAWAI_MASTER_PATH = DATABASE_DIR / "employee" / "pegawai_kelola.csv"
 PEGAWAI_ARSIP_PATH = DATABASE_DIR / "employee" / "arsip_pegawai.csv"
 
 KEHADIRAN_PATH = DATABASE_DIR / "attendance" / "kehadiran_final.csv"
-KPI_PATH = DATABASE_DIR / "performance" / "kpi_7aspek_final.csv"
+# (KPI_PATH lama dihapus - tidak pernah dipakai, duplikat dari
+# ASPEK_7_PATH yang didefinisikan & dipakai di bagian bawah file)
 
 LOG_AKTIVITAS_PATH = DATABASE_DIR / "activity" / "log_aktivitas.csv"  # sudah tidak dipakai: history activity kini disimpan di session_state (in-memory), bukan file
 
@@ -1507,7 +1531,7 @@ def ambil_biodata_pegawai(df_pegawai, nama_pegawai):
                     else "-"
                 )
 
-            except:
+            except Exception:
                 biodata[col] = "-"
 
     # ======================================================
@@ -1516,9 +1540,7 @@ def ambil_biodata_pegawai(df_pegawai, nama_pegawai):
     if "NIK" in biodata:
 
         biodata["NIK"] = (
-            str(biodata["NIK"])
-            .replace(".0", "")
-            .strip()
+            re.sub(r"\.0$", "", str(biodata["NIK"]).strip())
         )
 
     # ======================================================
@@ -1527,9 +1549,7 @@ def ambil_biodata_pegawai(df_pegawai, nama_pegawai):
     if "NIP BARU" in biodata:
 
         biodata["NIP BARU"] = (
-            str(biodata["NIP BARU"])
-            .replace(".0", "")
-            .strip()
+            re.sub(r"\.0$", "", str(biodata["NIP BARU"]).strip())
         )
 
     return biodata
@@ -1935,18 +1955,36 @@ def arsipkan_pegawai_pensiun_otomatis(df):
 
     # ==========================================================
     # Hapus duplikat
+    # ---------------------------------------------------------
+    # PERBAIKAN: sebelumnya dedup memakai kolom "NIP BARU". Karena
+    # banyak pegawai memiliki NIP BARU kosong (diisi placeholder "-"),
+    # seluruh baris arsip ber-NIP BARU "-" ikut dianggap "duplikat"
+    # satu sama lain dan hanya baris terakhir yang disimpan - pegawai
+    # arsip lain yang sebenarnya berbeda jadi hilang (ini penyebab
+    # jumlah arsip di file lebih banyak daripada yang tampil di web).
+    # Sekarang dedup memakai "NIK" (lebih unik & jarang kosong), dan
+    # HANYA baris dengan NIK valid yang dicek duplikatnya. Baris tanpa
+    # NIK valid tidak pernah digabung/dihapus, supaya tidak ada data
+    # arsip yang hilang secara tidak sengaja.
     # ==========================================================
-    if "NIP BARU" in df_arsip.columns:
+    if "NIK" in df_arsip.columns:
 
-        df_arsip = df_arsip.drop_duplicates(
-            subset=["NIP BARU"],
-            keep="last"
+        nik_bersih = df_arsip["NIK"].astype(str).str.strip()
+        nik_valid = ~nik_bersih.isin(["-", "", "nan", "None", "NaN"])
+
+        df_arsip = pd.concat(
+            [
+                df_arsip[nik_valid].drop_duplicates(subset=["NIK"], keep="last"),
+                df_arsip[~nik_valid],
+            ],
+            ignore_index=True
         )
 
     # ==========================================================
     # Simpan database arsip
     # ==========================================================
-    df_arsip.to_csv(
+    simpan_csv_atomic(
+        df_arsip,
         PEGAWAI_ARSIP_PATH,
         index=False,
         encoding="utf-8-sig"
@@ -3243,7 +3281,8 @@ def simpan_data_pegawai_kelola(df, path=PEGAWAI_MASTER_PATH):
     # ilmiah) atau kolom tanggal sebagai Date saat file CSV ini dibuka
     # ulang secara manual, dan mencegah pergeseran kolom akibat koma
     # yang tidak ter-escape pada kolom teks bebas (mis. alamat).
-    df.to_csv(
+    simpan_csv_atomic(
+        df,
         path,
         index=False,
         encoding="utf-8-sig",
@@ -3281,14 +3320,24 @@ def arsipkan_pegawai(row_pegawai, status, alasan, tanggal_arsip, catatan="-"):
         ignore_index=True
     )
 
-    # Hindari duplikasi berdasarkan NIP
-    if "NIP BARU" in df_arsip.columns:
-        df_arsip = df_arsip.drop_duplicates(
-            subset=["NIP BARU"],
-            keep="last"
+    # Hindari duplikasi berdasarkan NIK
+    # (PERBAIKAN: sebelumnya pakai "NIP BARU" - lihat penjelasan lengkap
+    # di fungsi arsipkan_pegawai_pensiun_otomatis di atas. Baris tanpa
+    # NIK valid tidak pernah digabung/dihapus.)
+    if "NIK" in df_arsip.columns:
+        nik_bersih = df_arsip["NIK"].astype(str).str.strip()
+        nik_valid = ~nik_bersih.isin(["-", "", "nan", "None", "NaN"])
+
+        df_arsip = pd.concat(
+            [
+                df_arsip[nik_valid].drop_duplicates(subset=["NIK"], keep="last"),
+                df_arsip[~nik_valid],
+            ],
+            ignore_index=True
         )
 
-    df_arsip.to_csv(
+    simpan_csv_atomic(
+        df_arsip,
         PEGAWAI_ARSIP_PATH,
         index=False,
         encoding="utf-8-sig"
@@ -4993,7 +5042,12 @@ def page_logout():
     with c2:
         if st.button("Batal"):
             # Kembali ke menu utama
-            st.session_state["menu"] = "Informasi Pegawai"
+            # PERBAIKAN: value harus sama persis dengan salah satu opsi
+            # pada st.radio(..., key="menu") di sidebar (lihat main()).
+            # Sebelumnya "Informasi Pegawai" tidak cocok dengan opsi
+            # "INFORMASI PEGAWAI" dan radio tidak punya key="menu" sama
+            # sekali, sehingga baris ini tidak berpengaruh apa-apa.
+            st.session_state["menu"] = "INFORMASI PEGAWAI"
             st.rerun()
 
 
@@ -5128,6 +5182,7 @@ def main():
                 "HISTORY ACTIVITY",
                 "LOGOUT",
             ],
+            key="menu",
             label_visibility="collapsed"
         )
 
@@ -5174,3 +5229,4 @@ def main():
 # Titik masuk program
 if __name__ == "__main__":
     main()
+    
