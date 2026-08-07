@@ -1,177 +1,178 @@
-# Dashboard Kepegawaian, Biro Umum Sekretariat Daerah Provinsi Jawa Timur
+# Employee Dashboard, General Bureau of the East Java Provincial Secretariat
 
-Aplikasi web internal berbasis Streamlit untuk pengelolaan data kepegawaian, pemantauan kinerja pegawai (KPI Jam Kerja dan KPI 7 Aspek ASN/BerAKHLAK), serta penyusunan laporan dan raport pegawai secara otomatis. Aplikasi ini dikembangkan untuk menggantikan proses rekapitulasi manual berbasis spreadsheet yang selama ini tersebar di berbagai berkas terpisah, dengan menyatukan seluruh alur kerja, mulai dari pencarian data pegawai, pemantauan kedisiplinan jam kerja, penilaian kinerja tujuh aspek ASN, hingga pengarsipan pegawai purna tugas, ke dalam satu dashboard terpusat.
-
----
-
-## Daftar Isi
-
-- [Ringkasan Proyek](#ringkasan-proyek)
-- [Fitur Utama](#fitur-utama)
-- [Arsitektur dan Alur Data](#arsitektur-dan-alur-data)
-- [Struktur Direktori Proyek](#struktur-direktori-proyek)
-- [Teknologi yang Digunakan](#teknologi-yang-digunakan)
-- [Instalasi dan Menjalankan Aplikasi](#instalasi-dan-menjalankan-aplikasi)
-- [Spesifikasi Format Data](#spesifikasi-format-data)
-- [Autentikasi Pengguna](#autentikasi-pengguna)
-- [Peta Menu Aplikasi](#peta-menu-aplikasi)
-- [Catatan Teknis dan Keputusan Desain](#catatan-teknis-dan-keputusan-desain)
-- [Batasan dan Risiko yang Diketahui](#batasan-dan-risiko-yang-diketahui)
-- [Roadmap Pengembangan](#roadmap-pengembangan)
-- [Lisensi dan Kontak](#lisensi-dan-kontak)
+An internal Streamlit-based web application for managing employee data, monitoring employee performance (Working Hours KPI and 7-Aspect ASN/BerAKHLAK KPI), and automatically generating employee reports and report cards. This application was developed to replace the manual, spreadsheet-based recapitulation process that was previously scattered across multiple separate files, by consolidating the entire workflow — from employee data lookup, working hours discipline monitoring, seven-aspect ASN performance assessment, to retired employee archiving — into a single centralized dashboard.
 
 ---
 
-## Ringkasan Proyek
+## Table of Contents
 
-Dashboard Kepegawaian merupakan aplikasi *single-page* berbasis Streamlit yang berfungsi sebagai sistem informasi kepegawaian skala internal, tanpa bergantung pada infrastruktur basis data relasional. Seluruh operasi baca dan tulis data dilakukan melalui berkas CSV/XLSX yang dikelola oleh `pandas`, sehingga aplikasi dapat dijalankan pada lingkungan komputasi terbatas tanpa proses instalasi server basis data terpisah. Pendekatan ini merupakan trade-off yang disengaja: kemudahan deployment dan portabilitas diprioritaskan di atas skalabilitas multi-pengguna simultan, pertimbangan ini dijelaskan lebih lanjut pada bagian [Batasan dan Risiko yang Diketahui](#batasan-dan-risiko-yang-diketahui).
-
----
-
-## Fitur Utama
-
-### Manajemen Data Pegawai
-
-- Pencarian pegawai secara *real-time* berdasarkan nama, NIP, atau NIK.
-- Penambahan, perubahan, dan penghapusan (pengarsipan) data pegawai melalui antarmuka form, tanpa memerlukan penyuntingan berkas CSV/Excel secara manual.
-- Deteksi dan pengarsipan pensiun otomatis: pegawai yang telah melewati Tanggal Mulai Tugas (TMT) pensiun secara otomatis dipindahkan ke Arsip Pegawai setiap kali aplikasi dimuat, sehingga data aktif senantiasa konsisten dengan status kepegawaian yang sebenarnya.
-- Normalisasi otomatis terhadap variasi penamaan kolom pada berkas master (misalnya `GOL. RUANG` versus `GOLONGAN`), guna menjaga konsistensi saat data diimpor dari sumber yang berbeda-beda.
-
-### Kelola Pegawai
-
-- Formulir input terstruktur untuk penambahan data pegawai baru, dengan validasi kolom wajib sebelum data disimpan ke `pegawai_kelola.csv`.
-- Mekanisme pembaruan data pegawai (biodata, jabatan, unit kerja, golongan, dan atribut kepegawaian lainnya) tanpa mengubah baris data pegawai lain.
-- Fungsi pengarsipan manual, memungkinkan pengguna memindahkan pegawai ke Arsip Pegawai secara langsung (di luar mekanisme deteksi pensiun otomatis), untuk kasus seperti mutasi, resign, atau pemberhentian.
-- Setiap perubahan data melalui menu ini tercatat pada Log Aktivitas Pengguna, sehingga jejak perubahan data kepegawaian tetap dapat ditelusuri.
-
-### Dashboard Informasi Pegawai
-
-- Visualisasi interaktif menggunakan Plotly untuk komposisi usia, jenis kelamin, jenjang pendidikan, agama, status kepegawaian, serta sebaran unit kerja dan jabatan.
-- Ringkasan kuantitatif jumlah pegawai aktif yang diperbarui secara real-time terhadap seluruh filter yang diterapkan pengguna.
-
-### KPI Jam Kerja
-
-- Unggah data kehadiran mentah (harian) dalam format CSV atau XLSX, yang diproses secara otomatis menjadi skor kedisiplinan per pegawai.
-- Perhitungan otomatis untuk sembilan komponen pelanggaran: Ijin, Terlambat, Pulang Cepat, Tidak Absen Datang, Tidak Absen Pulang, Alpha, Tidak Ikut Senam, Terlambat Senam, dan Tidak Ikut Apel, masing-masing dengan tarif potongan tersendiri.
-- Filter periode fleksibel: seluruh data, bulan tertentu, atau rentang tanggal kustom.
-- Grafik distribusi status kinerja, papan peringkat lima belas pegawai dengan potongan tertinggi, serta rincian data per pegawai.
-- Penyaringan otomatis terhadap status keaktifan pegawai, sehingga pegawai yang telah pensiun, dihapus, atau diarsipkan tidak memengaruhi statistik.
-- Ekspor rekap ke format CSV.
-
-### KPI 7 Aspek ASN (BerAKHLAK)
-
-- Unggah penilaian tujuh aspek (Orientasi Pelayanan, Akuntabel, Kompeten, Harmonis, Loyal, Adaptif, Kolaboratif) per periode, dengan mekanisme *upsert*: data dengan kombinasi NIP, Nama, dan Periode yang identik akan diperbarui, bukan diduplikasi.
-- Ringkasan kartu KPI (Tercapai, Dibawah Ekspektasi, Rata-rata Skor) dihitung dari satu baris data terbaru per pegawai, sehingga terhindar dari bias perhitungan ketika satu pegawai memiliki data dari beberapa periode sekaligus.
-- Radar chart rata-rata skor per aspek dan pie chart distribusi status, yang konsisten secara numerik dengan angka pada kartu ringkasan.
-- Tampilan detail per pegawai dalam mode "Per Bulan" maupun "Rata-rata Keseluruhan".
-- Penyaringan otomatis terhadap status keaktifan pegawai, disertai pesan peringatan eksplisit apabila data hasil unggahan tidak cocok dengan data pegawai (misalnya akibat kesalahan penulisan nama).
-
-### Raport Pegawai
-
-- Menggabungkan biodata, ringkasan KPI Jam Kerja, dan ringkasan KPI 7 Aspek dalam satu tampilan terpadu per pegawai.
-- Ekspor raport individual ke format PDF siap cetak, dibangun menggunakan ReportLab.
-
-### Arsip Pegawai
-
-- Menyimpan riwayat pegawai yang telah pensiun, pindah tugas, mengundurkan diri, atau dinonaktifkan, terpisah dari data aktif namun tetap dapat ditelusuri.
-- Ekspor data arsip ke format CSV.
-
-### Log Aktivitas Pengguna
-
-- Mencatat jejak aktivitas pengguna selama satu sesi berjalan (login, unggah data, unduh laporan, perubahan data pegawai, logout, dan sebagainya).
-- Ekspor log aktivitas ke format CSV.
-
-### Autentikasi dan Konsistensi Antarmuka
-
-- Sistem login berbasis sesi (`st.session_state`) dengan halaman login terpisah.
-- Desain antarmuka yang konsisten dengan identitas visual instansi pemerintahan (palet warna biru, tipografi Poppins), termasuk sidebar navigasi yang telah dioptimalkan agar keterbacaan teks terjaga di seluruh jenis komponen input.
+- [Project Overview](#project-overview)
+- [Key Features](#key-features)
+- [Architecture and Data Flow](#architecture-and-data-flow)
+- [Project Directory Structure](#project-directory-structure)
+- [Technology Stack](#technology-stack)
+- [Installation and Running the Application](#installation-and-running-the-application)
+- [Data Format Specifications](#data-format-specifications)
+- [User Authentication](#user-authentication)
+- [Application Menu Map](#application-menu-map)
+- [Technical Notes and Design Decisions](#technical-notes-and-design-decisions)
+- [Known Limitations and Risks](#known-limitations-and-risks)
+- [Development Roadmap](#development-roadmap)
+- [License and Contact](#license-and-contact)
 
 ---
 
-## Arsitektur dan Alur Data
+## Project Overview
 
-Aplikasi ini tidak menggunakan sistem manajemen basis data relasional. Seluruh data operasional disimpan sebagai berkas CSV di dalam struktur direktori lokal, dan dibaca-tulis ulang oleh aplikasi melalui `pandas`. Keputusan arsitektural ini didasari pertimbangan bahwa aplikasi perlu dijalankan secara internal tanpa memerlukan instalasi server basis data terpisah, dengan konsekuensi logis berupa keterbatasan pada skenario akses konkuren (lihat [Batasan dan Risiko yang Diketahui](#batasan-dan-risiko-yang-diketahui)).
+The Employee Dashboard is a single-page application built with Streamlit, functioning as an internal-scale employee information system without relying on relational database infrastructure. All data read and write operations are handled through CSV/XLSX files managed via `pandas`, allowing the application to run in resource-constrained computing environments without requiring a separate database server installation. This is a deliberate trade-off: deployment simplicity and portability are prioritized over simultaneous multi-user scalability — this consideration is discussed further in the [Known Limitations and Risks](#known-limitations-and-risks) section.
 
-Alur data secara umum dapat digambarkan sebagai berikut:
+---
 
+## Key Features
+
+### Employee Data Management
+
+- Real-time employee search by name, employee ID (NIP), or national ID (NIK).
+- Addition, modification, and deletion (archiving) of employee data through a form-based interface, eliminating the need for manual editing of CSV/Excel files.
+- Automatic retirement detection and archiving: employees who have passed their retirement effective date (TMT) are automatically moved to the Employee Archive each time the application loads, ensuring active data consistently reflects actual employment status.
+- Automatic normalization of column naming variations in master files (e.g., `GOL. RUANG` vs. `GOLONGAN`), maintaining consistency when data is imported from different sources.
+
+### Employee Management
+
+- Structured input form for adding new employee records, with required-field validation before data is saved to `pegawai_kelola.csv`.
+- Employee data update mechanism (biodata, position, work unit, rank, and other employment attributes) without altering other employees' rows.
+- Manual archiving function, allowing users to move an employee to the Employee Archive directly (outside the automatic retirement detection mechanism), for cases such as transfer, resignation, or dismissal.
+- Every data change made through this menu is recorded in the User Activity Log, ensuring employee data changes remain traceable.
+
+### Employee Information Dashboard
+
+- Interactive visualizations using Plotly for age composition, gender, education level, religion, employment status, as well as work unit and position distribution.
+- Quantitative summary of active employee counts, updated in real time based on all filters applied by the user.
+
+### Working Hours KPI
+
+- Upload raw (daily) attendance data in CSV or XLSX format, automatically processed into a discipline score per employee.
+- Automatic calculation for nine violation components: Permission Leave, Late Arrival, Early Departure, No Clock-In, No Clock-Out, Absent Without Notice, Missed Exercise Session, Late for Exercise Session, and Missed Roll Call, each with its own deduction rate.
+- Flexible period filtering: all data, a specific month, or a custom date range.
+- Performance status distribution chart, a leaderboard of the fifteen employees with the highest deductions, and per-employee data breakdown.
+- Automatic filtering based on employment status, ensuring retired, deleted, or archived employees do not affect the statistics.
+- Export of recapitulation to CSV format.
+
+### 7-Aspect ASN KPI (BerAKHLAK)
+
+- Upload of seven-aspect assessments (Service Orientation, Accountable, Competent, Harmonious, Loyal, Adaptive, Collaborative) per period, with an upsert mechanism: data with an identical combination of NIP, Name, and Period will be updated rather than duplicated.
+- KPI summary cards (Achieved, Below Expectation, Average Score) calculated from a single most recent data row per employee, avoiding calculation bias when an employee has data from multiple periods simultaneously.
+- Radar chart of average scores per aspect and pie chart of status distribution, numerically consistent with the figures shown on the summary cards.
+- Detailed per-employee view in "Monthly" or "Overall Average" mode.
+- Automatic filtering based on employment status, accompanied by explicit warning messages when uploaded data does not match employee records (e.g., due to name spelling errors).
+
+### Employee Report
+
+- Combines biodata, Working Hours KPI summary, and 7-Aspect KPI summary into a single unified view per employee.
+- Export of individual reports to print-ready PDF format, built using ReportLab.
+
+### Employee Archive
+
+- Stores the history of employees who have retired, transferred, resigned, or been deactivated, kept separate from active data but remaining traceable.
+- Export of archive data to CSV format.
+
+### User Activity Log
+
+- Records user activity trails during an active session (login, data upload, report download, employee data changes, logout, etc.).
+- Export of the activity log to CSV format.
+
+### Authentication and Interface Consistency
+
+- Session-based login system (`st.session_state`) with a dedicated login page.
+- Interface design consistent with the government institution's visual identity (blue color palette, Poppins typography), including a navigation sidebar optimized to maintain text readability across all input component types.
+
+---
+
+## Architecture and Data Flow
+
+This application does not use a relational database management system. All operational data is stored as CSV files within a local directory structure, and is read from and written back to by the application via `pandas`. This architectural decision is based on the requirement that the application run internally without needing a separate database server installation, with the logical consequence of limitations in concurrent access scenarios (see [Known Limitations and Risks](#known-limitations-and-risks)).
+
+The general data flow can be illustrated as follows:
 ```
 Data_Master.xlsx (data awal)
         |
         v
 pegawai_kelola.csv  <──────────────┐
-        |                          │  (perubahan tersimpan otomatis)
+        |                          │  (changes saved automatically)
         v                          │
   [ Aplikasi Streamlit ] ──────────┘
         |
-        ├── kehadiran_final.csv      → diolah menjadi KPI Jam Kerja
-        ├── kpi_7aspek_final.csv     → diolah menjadi KPI 7 Aspek ASN
-        └── arsip_pegawai.csv        ← pegawai pensiun/nonaktif dipindahkan otomatis
+        ├── kehadiran_final.csv      → processed into Working Hours KPI
+        ├── kpi_7aspek_final.csv     → processed into 7-Aspect ASN KPI
+        └── arsip_pegawai.csv        ← retired/inactive employees moved automatically
 ```
 
-Setiap kali aplikasi dimuat, data pegawai aktif disaring ulang terhadap TMT pensiun, dan pegawai yang telah melewati masa tugas dipindahkan secara otomatis ke arsip. Mekanisme ini memastikan bahwa seluruh perhitungan statistik dan KPI pada dashboard senantiasa merepresentasikan populasi pegawai yang benar-benar masih aktif, bukan sekadar data historis yang belum dibersihkan.
+Every time the application loads, active employee data is re-filtered against retirement effective dates (TMT), and employees who have passed their term of duty are automatically moved to the archive. This mechanism ensures that all statistical calculations and KPIs on the dashboard consistently represent the genuinely active employee population, rather than uncleaned historical data.
 
 ---
 
-## Struktur Direktori Proyek
+## Project Directory Structure
 
-Aplikasi mengasumsikan struktur direktori berikut relatif terhadap root proyek (lihat konfigurasi `BASE_DIR` pada kode sumber):
+The application assumes the following directory structure relative to the project root (see the `BASE_DIR` configuration in the source code):
+---
+
 
 ```
 project-root/
 ├── 01_source_code/
-│   └── dashboard_kepegawaian.py        # Entry point aplikasi
+│   └── dashboard_kepegawaian.py        # Application entry point
 ├── 03_dataset/
 │   └── employee/
-│       └── Data_Master.xlsx            # Data pegawai awal (seed)
+│       └── Data_Master.xlsx            # Initial employee data (seed)
 ├── 04_database_operasional/
 │   ├── employee/
-│   │   ├── pegawai_kelola.csv          # Data pegawai aktif (live)
-│   │   └── arsip_pegawai.csv           # Arsip pegawai nonaktif
+│   │   ├── pegawai_kelola.csv          # Active (live) employee data
+│   │   └── arsip_pegawai.csv           # Inactive employee archive
 │   ├── attendance/
-│   │   └── kehadiran_final.csv         # Basis data kehadiran harian
+│   │   └── kehadiran_final.csv         # Daily attendance database
 │   ├── performance/
-│   │   └── kpi_7aspek_final.csv        # Basis data penilaian 7 aspek ASN
+│   │   └── kpi_7aspek_final.csv        # 7-aspect ASN assessment database
 │   └── activity/
-│       └── log_aktivitas.csv           # Tidak lagi digunakan; log kini in-memory
+│       └── log_aktivitas.csv           # No longer used; log is now in-memory
 └── 05_asset/
-    └── LOGO.png                        # Logo instansi untuk halaman login/sidebar
+    └── LOGO.png                        # Institution logo for login page/sidebar
 ```
 
-Folder `04_database_operasional/` berisi data pegawai yang bersifat sensitif dan tidak boleh diunggah ke repositori publik. Gunakan berkas `.gitignore` untuk mengecualikan folder ini secara eksplisit (lihat bagian [Instalasi](#instalasi-dan-menjalankan-aplikasi)).
+The `04_database_operasional/` folder contains sensitive employee data and must not be uploaded to a public repository. Use a `.gitignore` file to explicitly exclude this folder (see the [Installation](#installation-and-running-the-application) section).
 
 ---
 
-## Teknologi yang Digunakan
+## Technology Stack
 
-| Kebutuhan Fungsional | Pustaka/Framework |
+| Functional Requirement | Library/Framework |
 |---|---|
-| Framework web dan dashboard | [Streamlit](https://streamlit.io/) |
-| Manipulasi data tabular | [pandas](https://pandas.pydata.org/), [numpy](https://numpy.org/) |
-| Visualisasi interaktif | [Plotly](https://plotly.com/python/) (`plotly.express`, `plotly.graph_objects`) |
-| Pembacaan dan penulisan berkas Excel | [openpyxl](https://openpyxl.readthedocs.io/) (dependensi engine untuk `pandas`) |
-| Pembuatan dokumen PDF | [ReportLab](https://www.reportlab.com/) |
-| Perhitungan tanggal presisi | [python-dateutil](https://dateutil.readthedocs.io/) |
-| Manajemen path lintas platform | `pathlib` (modul bawaan Python) |
+| Web framework and dashboard | [Streamlit](https://streamlit.io/) |
+| Tabular data manipulation | [pandas](https://pandas.pydata.org/), [numpy](https://numpy.org/) |
+| Interactive visualization | [Plotly](https://plotly.com/python/) (`plotly.express`, `plotly.graph_objects`) |
+| Excel file reading and writing | [openpyxl](https://openpyxl.readthedocs.io/) (engine dependency for `pandas`) |
+| PDF document generation | [ReportLab](https://www.reportlab.com/) |
+| Precise date calculations | [python-dateutil](https://dateutil.readthedocs.io/) |
+| Cross-platform path management | `pathlib` (Python built-in module) |
 
 ---
 
-## Instalasi dan Menjalankan Aplikasi
+## Installation and Running the Application
 
-### 1. Prasyarat Sistem
+### 1. System Requirements
 
-- Python versi 3.9 atau lebih baru.
-- `pip` telah terpasang pada sistem.
+- Python version 3.9 or later.
+- `pip` installed on the system.
 
-### 2. Clone Repositori
+### 2. Clone the Repository
 
 ```bash
-git clone https://github.com/<username>/<nama-repo>.git
-cd <nama-repo>
+git clone https://github.com/<username>/<repo-name>.git
+cd <repo-name>
 ```
 
-### 3. Pembuatan Virtual Environment
+### 3. Create a Virtual Environment
 
-Penggunaan virtual environment sangat disarankan untuk mengisolasi dependensi proyek dari instalasi Python sistem.
+Using a virtual environment is strongly recommended to isolate project dependencies from the system Python installation.
 
 ```bash
 python -m venv venv
@@ -183,9 +184,9 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 4. Instalasi Dependensi
+### 4. Install Dependencies
 
-Buat berkas `requirements.txt` (apabila belum tersedia) dengan isi sebagai berikut:
+Create a `requirements.txt` file (if not already available) with the following content:
 
 ```
 streamlit
@@ -197,110 +198,111 @@ python-dateutil
 openpyxl
 ```
 
-Kemudian jalankan:
+Then run:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Persiapan Struktur Direktori Data
+### 5. Prepare the Data Directory Structure
 
-Pastikan struktur direktori telah sesuai dengan penjelasan pada bagian [Struktur Direktori Proyek](#struktur-direktori-proyek), dengan minimal dua berkas berikut telah tersedia:
+Ensure the directory structure matches the description in the [Project Directory Structure](#project-directory-structure) section, with at minimum the following two files available:
 
-- `03_dataset/employee/Data_Master.xlsx`, data pegawai awal.
-- `05_asset/LOGO.png`, logo instansi.
+- `03_dataset/employee/Data_Master.xlsx`, the initial employee data.
+- `05_asset/LOGO.png`, the institution logo.
 
-Berkas-berkas pada `04_database_operasional/` akan dibuat dan diisi secara otomatis oleh aplikasi seiring penggunaan (unggah data, penambahan/perubahan data, dan sebagainya).
+Files within `04_database_operasional/` will be automatically created and populated by the application as it is used (data uploads, additions/changes, etc.).
 
-### 6. Menjalankan Aplikasi
+### 6. Run the Application
 
 ```bash
 streamlit run 01_source_code/dashboard_kepegawaian.py
 ```
 
-Aplikasi akan terbuka secara otomatis pada `http://localhost:8501`.
+The application will open automatically at `http://localhost:8501`.
 
 ---
 
-## Spesifikasi Format Data
+## Data Format Specifications
 
-### Data Master Pegawai (`Data_Master.xlsx`)
+### Employee Master Data (`Data_Master.xlsx`)
 
-Kolom minimal yang diharapkan (variasi penamaan kolom dinormalisasi secara otomatis oleh aplikasi):
+Minimum expected columns (column naming variations are automatically normalized by the application):
 
 `NO`, `NAMA`, `NIP BARU`, `NIK`, `JK`, `AGAMA`, `STATUS PNS/CPNS`, `JENJANG`, `NAMA JABATAN`, `UNIT KERJA`, `TGL LAHIR`, `USIA`, `TMT MASUK KERJA`, `TMT PANGKAT`, `GOLONGAN`, `TMT PENSIUN`, `TAHUN PENSIUN`.
 
-### Data Kehadiran (diunggah melalui menu KPI Jam Kerja)
+### Attendance Data (uploaded via the Working Hours KPI menu)
 
-Format CSV atau XLSX berisi data kehadiran harian per pegawai, mencakup kolom seperti `nama`, `nip`, `opd`, `tanggal`, `kode_asli`, `menit_terlambat`, dan `potong_gaji`. Kode kehadiran dipetakan secara otomatis ke sembilan komponen pelanggaran (Ijin, Terlambat, Pulang Cepat, dan seterusnya).
+CSV or XLSX format containing daily attendance data per employee, including columns such as `nama`, `nip`, `opd`, `tanggal`, `kode_asli`, `menit_terlambat`, and `potong_gaji`. Attendance codes are automatically mapped to the nine violation components (Permission Leave, Late Arrival, and so on).
 
-### Data Penilaian 7 Aspek ASN (diunggah melalui menu KPI 7 Aspek ASN)
+### 7-Aspect ASN Assessment Data (uploaded via the 7-Aspect ASN KPI menu)
 
-Kolom wajib: `NAMA`, `Orientasi_Pelayanan`, `Akuntabel`, `Kompeten`, `Harmonis`, `Loyal`, `Adaptif`, `Kolaboratif`.
+Required columns: `NAMA`, `Orientasi_Pelayanan`, `Akuntabel`, `Kompeten`, `Harmonis`, `Loyal`, `Adaptif`, `Kolaboratif`.
 
-Kolom opsional: `NIP`, `Periode` (format `YYYY-MM`, contoh: `2026-01`).
-
----
-
-## Autentikasi Pengguna
-
-Aplikasi menggunakan sistem login berbasis dictionary Python (`USERS`) yang tervalidasi melalui `st.session_state`, sesuai untuk lingkup pengguna internal terbatas dengan kebutuhan keamanan minimal.
-
-**Catatan penting untuk lingkungan produksi.** Implementasi saat ini menyimpan kredensial sebagai teks biasa (*plain text*) di dalam kode sumber, pendekatan ini memadai untuk tahap pengembangan atau demonstrasi, tetapi tidak sesuai untuk deployment produksi tanpa modifikasi. Rekomendasi perbaikan meliputi:
-
-- Memindahkan kredensial ke *environment variable* atau *secrets manager* (misalnya `st.secrets` pada Streamlit Cloud).
-- Menerapkan mekanisme *hashing* password (misalnya menggunakan `bcrypt` atau `passlib`).
-- Memastikan berkas kode yang memuat kredensial asli tidak disertakan dalam repositori publik.
+Optional columns: `NIP`, `Periode` (format `YYYY-MM`, e.g., `2026-01`).
 
 ---
 
-## Peta Menu Aplikasi
+## User Authentication
 
-| Menu | Fungsi |
+The application uses a Python dictionary-based login system (`USERS`) validated through `st.session_state`, suitable for a limited internal user base with minimal security requirements.
+
+**Important note for production environments.** The current implementation stores credentials as plain text within the source code. This approach is adequate for the development or demonstration stage, but is not suitable for production deployment without modification. Recommended improvements include:
+
+- Moving credentials to environment variables or a secrets manager (e.g., `st.secrets` on Streamlit Cloud).
+- Implementing password hashing (e.g., using `bcrypt` or `passlib`).
+- Ensuring source files containing actual credentials are not included in a public repository.
+
+---
+
+## Application Menu Map
+
+| Menu | Function |
 |---|---|
-| Informasi Pegawai | Pencarian dan tampilan detail data pegawai |
-| Dashboard Informasi Pegawai | Visualisasi komposisi demografis dan organisasi pegawai |
-| Kelola Pegawai | Input, pembaruan, dan penghapusan (pengarsipan) data pegawai |
-| KPI Jam Kerja | Unggah kehadiran, perhitungan skor kedisiplinan, dan rekapitulasi |
-| KPI 7 Aspek ASN | Unggah penilaian 7 aspek BerAKHLAK dan rekapitulasi kinerja |
-| Raport Pegawai | Ringkasan biodata dan KPI per pegawai, ekspor PDF |
-| Arsip Pegawai | Riwayat pegawai nonaktif, pensiun, atau pindah tugas |
-| Log Aktivitas | Log aktivitas pengguna selama sesi berjalan |
-| Logout | Konfirmasi dan keluar dari sesi aplikasi |
+| Employee Information | Employee data search and detail view |
+| Employee Information Dashboard | Visualization of employee demographic and organizational composition |
+| Employee Management | Input, update, and deletion (archiving) of employee data |
+| Working Hours KPI | Attendance upload, discipline score calculation, and recapitulation |
+| 7-Aspect ASN KPI | BerAKHLAK 7-aspect assessment upload and performance recapitulation |
+| Employee Report | Per-employee biodata and KPI summary, PDF export |
+| Employee Archive | History of inactive, retired, or transferred employees |
+| Activity Log | User activity log for the active session |
+| Logout | Session exit confirmation and logout |
 
 ---
 
-## Catatan Teknis dan Keputusan Desain
+## Technical Notes and Design Decisions
 
-- **Konsistensi statistik KPI.** Seluruh kartu ringkasan, pie chart, dan radar chart pada menu KPI dihitung dari satu sumber baris data yang identik per pegawai, bukan dari seluruh baris mentah, sehingga tidak terjadi bias perhitungan ganda ketika satu pegawai memiliki lebih dari satu periode data dalam mode "Semua Data".
-- **Sinkronisasi status keaktifan.** Data KPI, baik Jam Kerja maupun 7 Aspek, senantiasa disaring terhadap daftar pegawai yang benar-benar masih aktif pada basis data pegawai, bukan hanya berdasarkan data yang diunggah. Mekanisme ini mencegah pegawai yang telah pensiun atau dinonaktifkan ikut memengaruhi statistik kinerja.
-- **Diferensiasi pesan kesalahan.** Aplikasi membedakan secara eksplisit antara kondisi "basis data belum pernah diisi" dengan "data tersedia namun tersaring habis karena tidak cocok dengan data pegawai aktif" (misalnya akibat kesalahan penulisan nama), sehingga proses debugging oleh pengguna maupun tim IT dapat berlangsung lebih cepat dan akurat.
-- **Isolasi gaya tampilan (CSS).** Aturan tampilan sidebar dan area konten utama dipisahkan secara eksplisit untuk mencegah komponen input baru yang ditambahkan di kemudian hari mewarisi gaya yang tidak sesuai konteksnya (misalnya teks gelap di atas latar belakang gelap).
-
----
-
-## Batasan dan Risiko yang Diketahui
-
-Bagian ini disertakan secara sengaja agar pengguna dan pengembang lanjutan memahami trade-off arsitektural yang melekat pada desain aplikasi saat ini, bukan sekadar daftar kekurangan.
-
-- **Konkurensi akses.** Karena penyimpanan berbasis berkas CSV tanpa mekanisme locking eksplisit, penulisan data secara simultan oleh lebih dari satu pengguna berpotensi menyebabkan kondisi *race condition* atau kehilangan data. Aplikasi ini paling sesuai untuk skenario penggunaan sekuensial atau jumlah pengguna aktif yang kecil.
-- **Skalabilitas volume data.** Pendekatan pembacaan penuh berkas CSV ke memori (`pandas.read_csv`) akan mengalami penurunan performa seiring pertumbuhan volume data kepegawaian dalam jangka panjang.
-- **Keamanan kredensial.** Sebagaimana dijelaskan pada bagian [Autentikasi Pengguna](#autentikasi-pengguna), skema autentikasi saat ini belum memenuhi standar keamanan produksi.
+- **KPI statistical consistency.** All summary cards, pie charts, and radar charts on the KPI menus are calculated from a single, identical source row of data per employee, rather than from all raw rows, preventing double-counting bias when an employee has more than one period of data in "All Data" mode.
+- **Employment status synchronization.** KPI data, both Working Hours and 7-Aspect, is consistently filtered against the list of genuinely active employees in the employee database, not merely based on uploaded data. This mechanism prevents retired or deactivated employees from affecting performance statistics.
+- **Error message differentiation.** The application explicitly distinguishes between the condition "database has never been populated" and "data is available but has been entirely filtered out due to a mismatch with active employee records" (e.g., due to name spelling errors), enabling faster and more accurate debugging by users and IT teams alike.
+- **Style (CSS) isolation.** Sidebar and main content area styling rules are explicitly separated to prevent newly added input components from inheriting styles that are inappropriate for their context (e.g., dark text on a dark background).
 
 ---
 
-## Roadmap Pengembangan
+## Known Limitations and Risks
 
-- Migrasi penyimpanan data dari CSV ke sistem basis data (PostgreSQL atau SQLite) untuk mendukung akses multi-pengguna secara konkuren.
-- Penerapan hashing kredensial pengguna dan dukungan multi-role (admin, staf, pimpinan).
-- Ekspor rekap KPI Jam Kerja dan 7 Aspek ke format Excel (`.xlsx`), sebagai pelengkap format CSV yang sudah tersedia.
-- Notifikasi otomatis (in-app) untuk pegawai yang akan memasuki masa pensiun dalam periode mendatang.
-- Penyusunan pengujian otomatis (unit test) untuk fungsi-fungsi pengolahan data KPI.
+This section is included deliberately, so that users and future developers understand the architectural trade-offs inherent in the application's current design, rather than simply reading a list of shortcomings.
+
+- **Access concurrency.** Because storage is CSV-file-based without an explicit locking mechanism, simultaneous data writes by more than one user could potentially cause race conditions or data loss. This application is best suited for sequential usage scenarios or a small number of concurrently active users.
+- **Data volume scalability.** The approach of loading entire CSV files into memory (`pandas.read_csv`) will experience performance degradation as employee data volume grows over the long term.
+- **Credential security.** As explained in the [User Authentication](#user-authentication) section, the current authentication scheme does not yet meet production security standards.
 
 ---
 
-## Lisensi dan Kontak
+## Development Roadmap
 
-Proyek ini dikembangkan untuk kebutuhan internal Biro Umum Sekretariat Daerah. Ketentuan lisensi pada bagian ini perlu disesuaikan dengan kebijakan instansi atau organisasi terkait (misalnya proprietary/internal use only, atau lisensi open-source seperti MIT apabila proyek akan dibagikan secara publik).
+- Migrate data storage from CSV to a database system (PostgreSQL or SQLite) to support concurrent multi-user access.
+- Implement user credential hashing and multi-role support (admin, staff, management).
+- Export Working Hours and 7-Aspect KPI recapitulations to Excel (`.xlsx`) format, complementing the existing CSV format.
+- Automatic in-app notifications for employees approaching retirement within an upcoming period.
+- Development of automated tests (unit tests) for KPI data processing functions.
 
+---
+
+## License and Contact
+
+This project was developed for the internal needs of the General Bureau of the Regional Secretariat. The licensing terms in this section should be adjusted according to the relevant institution's or organization's policy (e.g., proprietary/internal use only, or an open-source license such as MIT if the project is to be shared publicly).
+
+For questions, bug reports, or feature requests, please open an Issue on this repository or contact the internal development team.
 Untuk pertanyaan, laporan bug, atau permintaan fitur, silakan membuka Issue pada repositori ini atau menghubungi tim pengembang internal.
